@@ -14,6 +14,7 @@ func (u *Usecase) CreateTeam(ctx context.Context, team entities.Team) (*entities
 	defer cancel()
 
 	if team.Name == "" {
+		u.log.Errorw("failed to create team: missing team_name")
 		return nil, fmt.Errorf("%w: team_name is required", entities.ErrInvalidArgument)
 	}
 	return u.repo.CreateTeam(ctx, team)
@@ -25,6 +26,7 @@ func (u *Usecase) Team(ctx context.Context, name string) (*entities.Team, error)
 	defer cancel()
 
 	if name == "" {
+		u.log.Errorw("failed to get team: missing team_name")
 		return nil, fmt.Errorf("%w: team_name is required", entities.ErrInvalidArgument)
 	}
 	return u.repo.GetTeam(ctx, name)
@@ -36,6 +38,7 @@ func (u *Usecase) DeactivateTeam(ctx context.Context, teamName string) (entities
 	defer cancel()
 
 	if teamName == "" {
+		u.log.Errorw("failed to deactivate team: missing team_name")
 		return entities.DeactivateResult{}, fmt.Errorf("%w: team_name is required", entities.ErrInvalidArgument)
 	}
 	return u.repo.DeactivateTeam(ctx, teamName)

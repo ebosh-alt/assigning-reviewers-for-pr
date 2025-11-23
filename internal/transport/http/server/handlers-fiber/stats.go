@@ -13,7 +13,8 @@ import (
 func (h *Handler) GetStats(c *fiber.Ctx) error {
 	statsRes, err := h.uc.Stats(c.Context())
 	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(errorResponse(api.NOTFOUND, "internal error"))
+		h.log.Errorw("failed to get stats", "error", err.Error())
+		return writeError(c, err)
 	}
 	return c.Status(http.StatusOK).JSON(statsRes)
 }
@@ -37,7 +38,8 @@ func (h *Handler) GetStatsSummary(c *fiber.Ctx, params api.GetStatsSummaryParams
 
 	summary, err := h.uc.SummaryStats(c.Context(), filter)
 	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(errorResponse(api.NOTFOUND, "internal error"))
+		h.log.Errorw("failed to get summary stats", "error", err.Error())
+		return writeError(c, err)
 	}
 	return c.Status(http.StatusOK).JSON(summary)
 }
@@ -51,6 +53,7 @@ func (h *Handler) GetStatsReviewerUserId(c *fiber.Ctx, userID string, params api
 
 	res, err := h.uc.ReviewerStats(c.Context(), userID, limit)
 	if err != nil {
+		h.log.Errorw("failed to get reviewer stats", "error", err.Error())
 		return writeError(c, err)
 	}
 	return c.Status(http.StatusOK).JSON(res)
@@ -60,6 +63,7 @@ func (h *Handler) GetStatsReviewerUserId(c *fiber.Ctx, userID string, params api
 func (h *Handler) GetStatsPrPrId(c *fiber.Ctx, prID string) error {
 	res, err := h.uc.PRStats(c.Context(), prID)
 	if err != nil {
+		h.log.Errorw("failed to get PR stats", "error", err.Error())
 		return writeError(c, err)
 	}
 	return c.Status(http.StatusOK).JSON(res)

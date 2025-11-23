@@ -14,6 +14,7 @@ func (u *Usecase) SetActiveUser(ctx context.Context, userID string, isActive boo
 	defer cancel()
 
 	if userID == "" {
+		u.log.Errorw("failed to set user active: missing userID")
 		return nil, fmt.Errorf("%w: userID is required", entities.ErrInvalidArgument)
 	}
 
@@ -26,6 +27,7 @@ func (u *Usecase) GetReviewList(ctx context.Context, userID string) ([]entities.
 	defer cancel()
 
 	if userID == "" {
+		u.log.Errorw("failed to get user reviews: missing userID")
 		return nil, fmt.Errorf("%w: userID is required", entities.ErrInvalidArgument)
 	}
 

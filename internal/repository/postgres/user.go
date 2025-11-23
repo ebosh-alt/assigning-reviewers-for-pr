@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 
 	"assigning-reviewers-for-pr/internal/entities"
-
-	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -34,10 +33,12 @@ func (p *Postgres) SetUserActive(ctx context.Context, userID string, isActive bo
 	var u entities.User
 	err := p.db.QueryRow(ctx, setUserActiveQuery, userID, isActive).
 		Scan(&u.ID, &u.Username, &u.TeamName, &u.IsActive)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, entities.ErrUserNotFound
-	}
 	if err != nil {
+		p.log.Errorw("failed to set user active", "error", err, "user_id", userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, entities.ErrUserNotFound
+		}
+
 		return nil, fmt.Errorf("set user active: %w", err)
 	}
 
@@ -57,12 +58,14 @@ func (p *Postgres) GetUserReviews(ctx context.Context, userID string) ([]entitie
 	for rows.Next() {
 		var pr entities.PullRequestShort
 		if err := rows.Scan(&pr.ID, &pr.Name, &pr.AuthorID, &pr.Status); err != nil {
+			p.log.Errorw("failed to scan user reviews", "error", err, "user_id", userID)
 			return nil, fmt.Errorf("scan user reviews: %w", err)
 		}
 		prs = append(prs, pr)
 	}
 
 	if err := rows.Err(); err != nil {
+		p.log.Errorw("failed to iterate user reviews", "error", err, "user_id", userID)
 		return nil, fmt.Errorf("iterate user reviews: %w", err)
 	}
 

@@ -28,7 +28,7 @@ const (
 )
 
 // CreatePR creates PR and assigns up to two reviewers.
-func (p *Postgres) CreatePR(ctx context.Context, pr entities.PullRequest) (*entities.PullRequest, error) {
+func (p *Postgres) CreatePR(ctx context.Context, pr entities.PullRequest) (res *entities.PullRequest, err error) {
 	tx, err := p.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -38,6 +38,7 @@ func (p *Postgres) CreatePR(ctx context.Context, pr entities.PullRequest) (*enti
 	var authorTeamID int64
 	var authorActive bool
 	if err := tx.QueryRow(ctx, selectAuthorQuery, pr.AuthorID).Scan(&authorTeamID, &authorActive); err != nil {
+		p.log.Errorw("failed to query author team", "error", err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, entities.ErrUserNotFound
 		}
@@ -50,6 +51,7 @@ func (p *Postgres) CreatePR(ctx context.Context, pr entities.PullRequest) (*enti
 
 	if _, err := tx.Exec(ctx, insertPRQuery, pr.ID, pr.Name, pr.AuthorID); err != nil {
 		var pgErr *pgconn.PgError
+		p.log.Errorw("failed to insert pull request", "error", err, "id", pr.ID)
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, entities.ErrPRExists
 		}
@@ -58,6 +60,7 @@ func (p *Postgres) CreatePR(ctx context.Context, pr entities.PullRequest) (*enti
 
 	candidatesRows, err := tx.Query(ctx, selectCandidatesQuery, authorTeamID, pr.AuthorID)
 	if err != nil {
+		p.log.Errorw("failed to select candidates", "error", err)
 		return nil, fmt.Errorf("select candidates: %w", err)
 	}
 	defer candidatesRows.Close()
@@ -65,23 +68,27 @@ func (p *Postgres) CreatePR(ctx context.Context, pr entities.PullRequest) (*enti
 	for candidatesRows.Next() {
 		var id string
 		if err := candidatesRows.Scan(&id); err != nil {
+			p.log.Errorw("failed to scan candidate", "error", err)
 			return nil, err
 		}
 		candidates = append(candidates, id)
 	}
 	if err := candidatesRows.Err(); err != nil {
+		p.log.Errorw("error iterating candidates", "error", err)
 		return nil, err
 	}
 
 	reviewers := pickRandom(candidates, 2)
 	for _, r := range reviewers {
 		if _, err := tx.Exec(ctx, insertReviewerQuery, pr.ID, r); err != nil {
+			p.log.Errorw("failed to insert reviewer", "error", err, "reviewer_id", r)
 			return nil, fmt.Errorf("insert reviewer: %w", err)
 		}
 	}
 
 	var createdAt time.Time
 	if err := tx.QueryRow(ctx, `SELECT created_at FROM pull_requests WHERE id=$1`, pr.ID).Scan(&createdAt); err != nil {
+		p.log.Errorw("failed to select created_at", "error", err, "pr_id", pr.ID)
 		return nil, fmt.Errorf("select created_at: %w", err)
 	}
 
@@ -97,7 +104,7 @@ func (p *Postgres) CreatePR(ctx context.Context, pr entities.PullRequest) (*enti
 }
 
 // MergePR marks PR merged idempotently.
-func (p *Postgres) MergePR(ctx context.Context, prID string) (*entities.PullRequest, error) {
+func (p *Postgres) MergePR(ctx context.Context, prID string) (res *entities.PullRequest, err error) {
 	tx, err := p.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -109,6 +116,7 @@ func (p *Postgres) MergePR(ctx context.Context, prID string) (*entities.PullRequ
 	var mergedAt *time.Time
 	if err := tx.QueryRow(ctx, selectPRForUpdateQuery, prID).
 		Scan(&pr.ID, &pr.Name, &pr.AuthorID, &pr.Status, &createdAt, &mergedAt); err != nil {
+		p.log.Errorw("failed to select pr for update", "error", err, "pr_id", prID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, entities.ErrPRNotFound
 		}
@@ -121,6 +129,7 @@ func (p *Postgres) MergePR(ctx context.Context, prID string) (*entities.PullRequ
 	if pr.Status != entities.StatusMerged {
 		var now time.Time
 		if err := tx.QueryRow(ctx, updatePRMergedQuery, prID).Scan(&now); err != nil {
+			p.log.Errorw("failed to update pr merged", "error", err, "pr_id", prID)
 			return nil, fmt.Errorf("merge pr: %w", err)
 		}
 		pr.Status = entities.StatusMerged
@@ -129,6 +138,7 @@ func (p *Postgres) MergePR(ctx context.Context, prID string) (*entities.PullRequ
 
 	reviewers, err := p.readReviewers(ctx, tx, prID)
 	if err != nil {
+
 		return nil, err
 	}
 	pr.Reviewers = reviewers
@@ -142,7 +152,7 @@ func (p *Postgres) MergePR(ctx context.Context, prID string) (*entities.PullRequ
 }
 
 // ReassignReviewer replaces reviewer with another active member of same team.
-func (p *Postgres) ReassignReviewer(ctx context.Context, prID, oldUserID string) (*entities.PullRequest, string, error) {
+func (p *Postgres) ReassignReviewer(ctx context.Context, prID, oldUserID string) (res *entities.PullRequest, repl string, err error) {
 	tx, err := p.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, "", err
@@ -153,6 +163,7 @@ func (p *Postgres) ReassignReviewer(ctx context.Context, prID, oldUserID string)
 	var createdAt time.Time
 	if err := tx.QueryRow(ctx, selectPRForUpdateQuery, prID).
 		Scan(&pr.ID, &pr.Name, &pr.AuthorID, &pr.Status, &createdAt, &pr.MergedAt); err != nil {
+		p.log.Errorw("failed to select pr for update", "error", err, "pr_id", prID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", entities.ErrPRNotFound
 		}
@@ -178,11 +189,13 @@ func (p *Postgres) ReassignReviewer(ctx context.Context, prID, oldUserID string)
 		}
 	}
 	if !assigned {
+		p.log.Errorw("old reviewer not assigned to PR", "pr_id", prID, "old_reviewer", oldUserID)
 		return nil, "", entities.ErrNotAssigned
 	}
 
 	var teamID int64
 	if err := tx.QueryRow(ctx, selectReviewerTeamQuery, oldUserID).Scan(&teamID); err != nil {
+		p.log.Errorw("failed to select old reviewer team", "error", err, "old_reviewer", oldUserID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", entities.ErrUserNotFound
 		}
@@ -191,6 +204,7 @@ func (p *Postgres) ReassignReviewer(ctx context.Context, prID, oldUserID string)
 
 	rows, err := tx.Query(ctx, selectReplacementCandidatesQuery, teamID, pr.AuthorID)
 	if err != nil {
+		p.log.Errorw("failed to select replacements", "error", err, "pr_id", prID)
 		return nil, "", fmt.Errorf("select replacements: %w", err)
 	}
 	defer rows.Close()
@@ -220,7 +234,7 @@ func (p *Postgres) ReassignReviewer(ctx context.Context, prID, oldUserID string)
 		return nil, "", entities.ErrNoCandidate
 	}
 
-	repl := pickRandom(candidates, 1)[0]
+	repl = pickRandom(candidates, 1)[0]
 
 	if _, err := tx.Exec(ctx, deleteReviewerQuery, prID, oldUserID); err != nil {
 		return nil, "", fmt.Errorf("delete old reviewer: %w", err)
@@ -246,6 +260,7 @@ func (p *Postgres) ReassignReviewer(ctx context.Context, prID, oldUserID string)
 func (p *Postgres) readReviewers(ctx context.Context, tx pgx.Tx, prID string) ([]string, error) {
 	rows, err := tx.Query(ctx, selectReviewersQuery, prID)
 	if err != nil {
+		p.log.Errorw("failed to select reviewers", "error", err, "pr_id", prID)
 		return nil, fmt.Errorf("select reviewers: %w", err)
 	}
 	defer rows.Close()
@@ -253,11 +268,13 @@ func (p *Postgres) readReviewers(ctx context.Context, tx pgx.Tx, prID string) ([
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			p.log.Errorw("failed to scan reviewer", "error", err)
 			return nil, err
 		}
 		revs = append(revs, id)
 	}
 	if err := rows.Err(); err != nil {
+		p.log.Errorw("error iterating reviewers", "error", err)
 		return nil, err
 	}
 	return revs, nil

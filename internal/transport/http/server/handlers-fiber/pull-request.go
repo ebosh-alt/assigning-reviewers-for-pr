@@ -13,6 +13,7 @@ import (
 func (h *Handler) PostPullRequestCreate(c *fiber.Ctx) error {
 	var body api.PostPullRequestCreateJSONRequestBody
 	if err := c.BodyParser(&body); err != nil {
+		h.log.Errorw("failed to parse body", "error", err.Error())
 		return c.Status(http.StatusBadRequest).JSON(errorResponse(api.NOTFOUND, "invalid body"))
 	}
 	pr, err := h.uc.CreatePullRequest(c.Context(), entities.PullRequest{
@@ -32,6 +33,7 @@ func (h *Handler) PostPullRequestCreate(c *fiber.Ctx) error {
 func (h *Handler) PostPullRequestMerge(c *fiber.Ctx) error {
 	var body api.PostPullRequestMergeJSONRequestBody
 	if err := c.BodyParser(&body); err != nil {
+		h.log.Errorw("failed to parse body", "error", err.Error())
 		return c.Status(http.StatusBadRequest).JSON(errorResponse(api.NOTFOUND, "invalid body"))
 	}
 	pr, err := h.uc.MergePullRequest(c.Context(), body.PullRequestId)
@@ -47,6 +49,7 @@ func (h *Handler) PostPullRequestMerge(c *fiber.Ctx) error {
 func (h *Handler) PostPullRequestReassign(c *fiber.Ctx) error {
 	var body api.PostPullRequestReassignJSONRequestBody
 	if err := c.BodyParser(&body); err != nil {
+		h.log.Errorw("failed to parse body", "error", err.Error())
 		return c.Status(http.StatusBadRequest).JSON(errorResponse(api.NOTFOUND, "invalid body"))
 	}
 	pr, replaced, err := h.uc.ReassignPullRequest(c.Context(), body.PullRequestId, body.OldUserId)

@@ -12,6 +12,7 @@ import (
 func (h *Handler) GetUsersGetReview(c *fiber.Ctx, params api.GetUsersGetReviewParams) error {
 	prs, err := h.uc.GetReviewList(c.Context(), params.UserId)
 	if err != nil {
+		h.log.Errorw("failed to get review list", "error", err.Error())
 		return writeError(c, err)
 	}
 
@@ -30,11 +31,13 @@ func (h *Handler) GetUsersGetReview(c *fiber.Ctx, params api.GetUsersGetReviewPa
 func (h *Handler) PostUsersSetIsActive(c *fiber.Ctx) error {
 	var body api.PostUsersSetIsActiveJSONRequestBody
 	if err := c.BodyParser(&body); err != nil {
+		h.log.Errorw("failed to parse body", "error", err.Error())
 		return c.Status(http.StatusBadRequest).JSON(errorResponse(api.NOTFOUND, "invalid body"))
 	}
 
 	usr, err := h.uc.SetActiveUser(c.Context(), body.UserId, body.IsActive)
 	if err != nil {
+		h.log.Errorw("failed to set is_active for user", "error", err.Error())
 		return writeError(c, err)
 	}
 

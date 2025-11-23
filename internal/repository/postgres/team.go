@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"assigning-reviewers-for-pr/internal/entities"
 
@@ -35,7 +36,7 @@ WHERE pr.status='OPEN' AND EXISTS (
 )
 
 // CreateTeam inserts a team and upserts its members.
-func (p *Postgres) CreateTeam(ctx context.Context, team entities.Team) (*entities.Team, error) {
+func (p *Postgres) CreateTeam(ctx context.Context, team entities.Team) (res *entities.Team, err error) {
 	tx, err := p.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -46,6 +47,11 @@ func (p *Postgres) CreateTeam(ctx context.Context, team entities.Team) (*entitie
 	if err := tx.QueryRow(ctx, insertTeamQuery, team.Name).Scan(&teamID); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			p.log.Errorw("team already exists", "team", team.Name)
+			return nil, entities.ErrTeamExists
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+			p.log.Errorw("team already exists", "team", team.Name)
 			return nil, entities.ErrTeamExists
 		}
 		return nil, fmt.Errorf("insert team: %w", err)
@@ -53,11 +59,13 @@ func (p *Postgres) CreateTeam(ctx context.Context, team entities.Team) (*entitie
 
 	for _, m := range team.Members {
 		if _, err := tx.Exec(ctx, upsertUserQuery, m.ID, m.Username, teamID, m.IsActive); err != nil {
+			p.log.Errorw("failed to upsert user", "user", m.ID, "error", err)
 			return nil, fmt.Errorf("upsert user: %w", err)
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		p.log.Errorw("failed to commit team creation", "team", team.Name, "error", err)
 		return nil, err
 	}
 
@@ -66,9 +74,10 @@ func (p *Postgres) CreateTeam(ctx context.Context, team entities.Team) (*entitie
 }
 
 // GetTeam fetches team with members by name.
-func (p *Postgres) GetTeam(ctx context.Context, name string) (*entities.Team, error) {
+func (p *Postgres) GetTeam(ctx context.Context, name string) (team *entities.Team, err error) {
 	var teamID int64
 	if err := p.db.QueryRow(ctx, selectTeamIDQuery, name).Scan(&teamID); err != nil {
+		p.log.Errorw("failed to get team id", "team", name, "error", err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, entities.ErrTeamNotFound
 		}
@@ -77,6 +86,7 @@ func (p *Postgres) GetTeam(ctx context.Context, name string) (*entities.Team, er
 
 	rows, err := p.db.Query(ctx, selectTeamMembersQuery, teamID)
 	if err != nil {
+		p.log.Errorw("failed to get team members", "team", name, "error", err)
 		return nil, fmt.Errorf("get team members: %w", err)
 	}
 	defer rows.Close()
@@ -85,6 +95,7 @@ func (p *Postgres) GetTeam(ctx context.Context, name string) (*entities.Team, er
 	for rows.Next() {
 		var u entities.User
 		if err := rows.Scan(&u.ID, &u.Username, &u.IsActive); err != nil {
+			p.log.Errorw("failed to scan team member", "team", name, "error", err)
 			return nil, fmt.Errorf("scan members: %w", err)
 		}
 		u.TeamName = name
@@ -92,6 +103,7 @@ func (p *Postgres) GetTeam(ctx context.Context, name string) (*entities.Team, er
 	}
 
 	if err := rows.Err(); err != nil {
+		p.log.Errorw("error iterating team members", "team", name, "error", err)
 		return nil, fmt.Errorf("iterate members: %w", err)
 	}
 
@@ -99,9 +111,7 @@ func (p *Postgres) GetTeam(ctx context.Context, name string) (*entities.Team, er
 }
 
 // DeactivateTeam bulk deactivates team users and reassigns their open PRs to active users from other teams.
-func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entities.DeactivateResult, error) {
-	res := entities.DeactivateResult{}
-
+func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (res entities.DeactivateResult, err error) {
 	tx, err := p.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return res, err
@@ -110,6 +120,7 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 
 	var teamID int64
 	if err := tx.QueryRow(ctx, selectTeamIDForDeactivate, teamName).Scan(&teamID); err != nil {
+		p.log.Errorw("failed to lookup team for deactivation", "team", teamName, "error", err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return res, entities.ErrTeamNotFound
 		}
@@ -118,6 +129,7 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 
 	rows, err := tx.Query(ctx, deactivateUsersQuery, teamID)
 	if err != nil {
+		p.log.Errorw("failed to deactivate users", "team", teamName, "error", err)
 		return res, fmt.Errorf("deactivate users: %w", err)
 	}
 	defer rows.Close()
@@ -125,17 +137,20 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			p.log.Errorw("failed to scan deactivated user", "team", teamName, "error", err)
 			return res, err
 		}
 		deactivated = append(deactivated, id)
 	}
 	if err := rows.Err(); err != nil {
+		p.log.Errorw("error iterating deactivated users", "team", teamName, "error", err)
 		return res, err
 	}
 	res.DeactivatedUsers = len(deactivated)
 
 	if len(deactivated) == 0 {
 		if err := tx.Commit(ctx); err != nil {
+			p.log.Errorw("failed to commit deactivation with no users", "team", teamName, "error", err)
 			return res, err
 		}
 		return res, nil
@@ -143,6 +158,7 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 
 	prRows, err := tx.Query(ctx, selectImpactedPRsQuery, deactivated)
 	if err != nil {
+		p.log.Errorw("failed to select impacted PRs", "team", teamName, "error", err)
 		return res, fmt.Errorf("select affected prs: %w", err)
 	}
 	defer prRows.Close()
@@ -155,17 +171,20 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 	for prRows.Next() {
 		var prID, authorID string
 		if err := prRows.Scan(&prID, &authorID); err != nil {
+			p.log.Errorw("failed to scan impacted PR", "team", teamName, "error", err)
 			return res, err
 		}
 		impacted = append(impacted, impactedPR{id: prID, authorID: authorID})
 	}
 	if err := prRows.Err(); err != nil {
+		p.log.Errorw("error iterating impacted PRs", "team", teamName, "error", err)
 		return res, err
 	}
 
 	for _, pr := range impacted {
 		var status string
 		if err := tx.QueryRow(ctx, selectPRStatusQuery, pr.id).Scan(&status); err != nil {
+			p.log.Errorw("failed to get PR status", "pr_id", pr.id, "error", err)
 			return res, fmt.Errorf("status check: %w", err)
 		}
 		if status != string(entities.StatusOpen) {
@@ -174,6 +193,7 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 
 		reviewers, err := p.readReviewers(ctx, tx, pr.id)
 		if err != nil {
+			p.log.Errorw("failed to read PR reviewers", "pr_id", pr.id, "error", err)
 			return res, err
 		}
 
@@ -188,25 +208,30 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 			}
 
 			if _, err := tx.Exec(ctx, deleteReviewerForDeactivate, pr.id, r); err != nil {
+				p.log.Errorw("failed to delete old reviewer from PR", "pr_id", pr.id, "old_reviewer", r, "error", err)
 				return res, fmt.Errorf("delete old reviewer: %w", err)
 			}
 			delete(existing, r)
 
 			candidate, ok, err := p.pickReplacement(ctx, tx, teamID, pr.authorID, existing)
 			if err != nil {
+				p.log.Errorw("failed to pick replacement reviewer", "pr_id", pr.id, "old_reviewer", r, "error", err)
 				return res, err
 			}
 			if !ok {
 				if err := p.insertReassignmentHistory(ctx, tx, pr.id, r, nil); err != nil {
+					p.log.Errorw("failed to log removal of reviewer without replacement", "pr_id", pr.id, "old_reviewer", r, "error", err)
 					return res, err
 				}
 				res.Removed++
 				continue
 			}
 			if _, err := tx.Exec(ctx, insertReviewerForDeactivate, pr.id, candidate); err != nil {
+				p.log.Errorw("failed to insert new reviewer to PR", "pr_id", pr.id, "new_reviewer", candidate, "error", err)
 				return res, fmt.Errorf("insert replacement: %w", err)
 			}
 			if err := p.insertReassignmentHistory(ctx, tx, pr.id, r, &candidate); err != nil {
+				p.log.Errorw("failed to log reviewer reassignment", "pr_id", pr.id, "old_reviewer", r, "new_reviewer", candidate, "error", err)
 				return res, err
 			}
 			existing[candidate] = struct{}{}
@@ -215,6 +240,7 @@ func (p *Postgres) DeactivateTeam(ctx context.Context, teamName string) (entitie
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		p.log.Errorw("failed to commit team deactivation", "team", teamName, "error", err)
 		return res, err
 	}
 
@@ -234,6 +260,7 @@ func contains(list []string, target string) bool {
 func (p *Postgres) pickReplacement(ctx context.Context, tx pgx.Tx, deactivatedTeamID int64, authorID string, existing map[string]struct{}) (string, bool, error) {
 	rows, err := tx.Query(ctx, activeReplacementQuery, deactivatedTeamID, authorID)
 	if err != nil {
+		p.log.Errorw("failed to select replacement candidates", "deactivated_team_id", deactivatedTeamID, "author_id", authorID, "error", err)
 		return "", false, fmt.Errorf("select candidates: %w", err)
 	}
 	defer rows.Close()
@@ -241,6 +268,7 @@ func (p *Postgres) pickReplacement(ctx context.Context, tx pgx.Tx, deactivatedTe
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			p.log.Errorw("failed to scan replacement candidate", "deactivated_team_id", deactivatedTeamID, "author_id", authorID, "error", err)
 			return "", false, err
 		}
 		if _, ok := existing[id]; ok {
@@ -249,9 +277,11 @@ func (p *Postgres) pickReplacement(ctx context.Context, tx pgx.Tx, deactivatedTe
 		pool = append(pool, id)
 	}
 	if err := rows.Err(); err != nil {
+		p.log.Errorw("error iterating replacement candidates", "deactivated_team_id", deactivatedTeamID, "author_id", authorID, "error", err)
 		return "", false, err
 	}
 	if len(pool) == 0 {
+		p.log.Errorw("no replacement candidates available", "deactivated_team_id", deactivatedTeamID, "author_id", authorID)
 		return "", false, nil
 	}
 	candidate := pickRandom(pool, 1)[0]

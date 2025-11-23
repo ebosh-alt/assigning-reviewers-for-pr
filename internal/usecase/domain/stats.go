@@ -32,6 +32,7 @@ func (u *Usecase) ReviewerStats(ctx context.Context, userID string, limit int) (
 	defer cancel()
 
 	if userID == "" {
+		u.log.Errorw("failed to get reviewer stats: missing user_id")
 		return entities.ReviewerStats{}, fmt.Errorf("%w: user_id is required", entities.ErrInvalidArgument)
 	}
 	if limit <= 0 {
@@ -46,6 +47,7 @@ func (u *Usecase) PRStats(ctx context.Context, prID string) (entities.PRStats, e
 	defer cancel()
 
 	if prID == "" {
+		u.log.Errorw("failed to get PR stats: missing pr_id")
 		return entities.PRStats{}, fmt.Errorf("%w: pr_id is required", entities.ErrInvalidArgument)
 	}
 	return u.repo.PRStats(ctx, prID)

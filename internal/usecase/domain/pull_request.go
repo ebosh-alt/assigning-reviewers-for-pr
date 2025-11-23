@@ -14,6 +14,7 @@ func (u *Usecase) CreatePullRequest(ctx context.Context, pr entities.PullRequest
 	defer cancel()
 
 	if pr.ID == "" || pr.Name == "" || pr.AuthorID == "" {
+		u.log.Errorw("failed to create the pull request", "pr", pr)
 		return nil, fmt.Errorf("%w: missing required fields", entities.ErrInvalidArgument)
 	}
 	res, err := u.repo.CreatePR(ctx, pr)
@@ -30,6 +31,7 @@ func (u *Usecase) MergePullRequest(ctx context.Context, prID string) (*entities.
 	defer cancel()
 
 	if prID == "" {
+		u.log.Errorw("failed to merge the pull request: missing prID")
 		return nil, fmt.Errorf("%w: pull_request_id is required", entities.ErrInvalidArgument)
 	}
 	return u.repo.MergePR(ctx, prID)
@@ -41,6 +43,7 @@ func (u *Usecase) ReassignPullRequest(ctx context.Context, prID, oldUserID strin
 	defer cancel()
 
 	if prID == "" || oldUserID == "" {
+		u.log.Errorw("failed to reassign reviewer: missing required fields", "pr_id", prID, "old_user_id", oldUserID)
 		return nil, "", fmt.Errorf("%w: missing required fields", entities.ErrInvalidArgument)
 	}
 	return u.repo.ReassignReviewer(ctx, prID, oldUserID)

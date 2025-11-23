@@ -19,6 +19,7 @@ func New(level string) (*zap.SugaredLogger, error) {
 		Level:            zap.NewAtomicLevelAt(zapLevel),
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stderr"},
+		DisableStacktrace: true,
 		EncoderConfig: zapcore.EncoderConfig{
 			TimeKey:        "time",
 			LevelKey:       "level",

@@ -263,6 +263,7 @@ func (p *Postgres) PRStats(ctx context.Context, prID string) (entities.PRStats, 
 	if err := p.db.QueryRow(ctx, prStatsQuery, prID).
 		Scan(&res.PRID, &res.Name, &res.AuthorID, &res.Status, &createdAt, &mergedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			p.log.Errorw("pr not found", "pr_id", prID)
 			return res, entities.ErrPRNotFound
 		}
 		return res, fmt.Errorf("pr stats: %w", err)
@@ -272,17 +273,20 @@ func (p *Postgres) PRStats(ctx context.Context, prID string) (entities.PRStats, 
 
 	revRows, err := p.db.Query(ctx, prReviewersQuery, prID)
 	if err != nil {
+		p.log.Errorw("failed to query pr reviewers", "error", err, "pr_id", prID)
 		return res, fmt.Errorf("pr reviewers: %w", err)
 	}
 	defer revRows.Close()
 	for revRows.Next() {
 		var id string
 		if err := revRows.Scan(&id); err != nil {
+			p.log.Errorw("failed to scan pr reviewer", "error", err, "pr_id", prID)
 			return res, fmt.Errorf("scan pr reviewer: %w", err)
 		}
 		res.Reviewers = append(res.Reviewers, id)
 	}
 	if err := revRows.Err(); err != nil {
+		p.log.Errorw("failed to iterate pr reviewers", "error", err, "pr_id", prID)
 		return res, fmt.Errorf("iterate pr reviewers: %w", err)
 	}
 
@@ -295,6 +299,7 @@ func (p *Postgres) PRStats(ctx context.Context, prID string) (entities.PRStats, 
 		var ev entities.ReassignmentEvent
 		var newReviewer sql.NullString
 		if err := histRows.Scan(&ev.OldReviewerID, &newReviewer, &ev.ChangedAt); err != nil {
+			p.log.Errorw("failed to scan pr history", "error", err, "pr_id", prID)
 			return res, fmt.Errorf("scan history: %w", err)
 		}
 		if newReviewer.Valid {
@@ -303,6 +308,7 @@ func (p *Postgres) PRStats(ctx context.Context, prID string) (entities.PRStats, 
 		res.Reassignments = append(res.Reassignments, ev)
 	}
 	if err := histRows.Err(); err != nil {
+		p.log.Errorw("failed to iterate pr history", "error", err, "pr_id", prID)
 		return res, fmt.Errorf("iterate history: %w", err)
 	}
 

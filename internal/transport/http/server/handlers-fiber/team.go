@@ -18,7 +18,7 @@ func (h *Handler) PostTeamAdd(c *fiber.Ctx) error {
 
 	team, err := h.uc.CreateTeam(c.Context(), mapper.FromOAPITeam(body))
 	if err != nil {
-		h.log.Infow(err.Error())
+		h.log.Errorw("failed to create team", "error", err.Error())
 		return writeError(c, err)
 	}
 
@@ -31,6 +31,7 @@ func (h *Handler) PostTeamAdd(c *fiber.Ctx) error {
 func (h *Handler) GetTeamGet(c *fiber.Ctx, params api.GetTeamGetParams) error {
 	team, err := h.uc.Team(c.Context(), params.TeamName)
 	if err != nil {
+		h.log.Errorw("failed to get team", "error", err.Error())
 		return writeError(c, err)
 	}
 	return c.Status(http.StatusOK).JSON(mapper.ToOAPITeam(*team))
@@ -40,6 +41,7 @@ func (h *Handler) GetTeamGet(c *fiber.Ctx, params api.GetTeamGetParams) error {
 func (h *Handler) PostTeamDeactivate(c *fiber.Ctx) error {
 	var body api.PostTeamDeactivateJSONRequestBody
 	if err := c.BodyParser(&body); err != nil {
+		h.log.Errorw("failed to parse body", "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(api.NOTFOUND, "invalid body"))
 	}
 
@@ -50,6 +52,7 @@ func (h *Handler) PostTeamDeactivate(c *fiber.Ctx) error {
 
 	res, err := h.uc.DeactivateTeam(c.Context(), teamName)
 	if err != nil {
+		h.log.Errorw("failed to deactivate team", "error", err.Error())
 		return writeError(c, err)
 	}
 
