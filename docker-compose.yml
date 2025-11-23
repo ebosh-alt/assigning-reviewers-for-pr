@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: assigning_reviewers_for_pr_db
+    environment:
+      POSTGRES_DB: assigning_reviewers_for_pr_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "6132:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d assigning_reviewers_for_pr_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build: .
+    container_name: assigning_reviewers_for_pr_app
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./config/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB_NAME: assigning_reviewers_for_pr_db
+      POSTGRES_SSL_MODE: disable
+      POSTGRES_MIGRATIONS_DIR: /app/db/migrations
+      HTTP_REQUEST_TIMEOUT: 3s
+      POSTGRES_QUERY_TIMEOUT: 2s
+      POSTGRES_MIGRATE_TIMEOUT: 20s
+    ports:
+      - "8080:8080"
+    command: ["/app/assigning-reviewers-for-pr"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:

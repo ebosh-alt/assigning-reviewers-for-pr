@@ -31,10 +31,14 @@ make test       # go test ./...
 # линты/форматирование
 make lint       # golangci-lint run (конфиг .golangci.yml)
 make fmt        # gofumpt -w
+
+# генерация
+make generate   # oapi-codegen из openapi.yml (обновляет internal/oapi/api.gen.go)
 ```
 
 ## API и документация
 - OpenAPI спецификация: `openapi.yml` (а также вшита в бинарник через oapi-codegen). Импортируйте в Swagger UI или постман.
+- Кодогенерация: используем `oapi-codegen` (см. `make generate`), актуальный код в `internal/oapi/api.gen.go`.
 - Основные эндпоинты (см. спецификацию для полей/кодов):
   - `POST /team/add` — создать команду и участников.
   - `GET /team` — получить команду по имени.

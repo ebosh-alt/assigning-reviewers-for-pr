@@ -1,0 +1,35 @@
+# Go build artifacts
+bin/
+build/
+dist/
+*.exe
+*.dll
+*.so
+*.test
+*.out
+
+# Coverage
+coverage*
+*.cover
+*.cov
+*.lcov
+
+# Dependency/vendor caches
+vendor/
+
+# IDE/editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env/config
+.env
+config/.env
+
+# Generated
+internal/oapi/api.gen.go

@@ -1,0 +1,39 @@
+version: "2"
+run:
+  tests: true
+linters:
+  enable:
+    - goconst
+    - gocyclo
+    - misspell
+    - revive
+  settings:
+    gocyclo:
+      min-complexity: 30
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - checkPrivateReceivers
+            - sayRepetitiveInsteadOfStutters
+        - name: indent-error-flow
+        - name: error-naming
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - gocyclo
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofumpt
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
