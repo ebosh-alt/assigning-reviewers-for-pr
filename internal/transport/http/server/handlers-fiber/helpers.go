@@ -22,7 +22,7 @@ func writeError(c *fiber.Ctx, err error) error {
 	case errors.Is(err, entities.ErrUserNotFound), errors.Is(err, entities.ErrTeamNotFound), errors.Is(err, entities.ErrPRNotFound):
 		status = http.StatusNotFound
 		code = api.NOTFOUND
-		msg = err.Error()
+		msg = "resource not found"
 	case errors.Is(err, entities.ErrTeamExists):
 		status = http.StatusBadRequest
 		code = api.TEAMEXISTS
@@ -34,15 +34,15 @@ func writeError(c *fiber.Ctx, err error) error {
 	case errors.Is(err, entities.ErrPRMerged):
 		status = http.StatusConflict
 		code = api.PRMERGED
-		msg = err.Error()
+		msg = "cannot reassign on merged PR"
 	case errors.Is(err, entities.ErrNotAssigned):
 		status = http.StatusConflict
 		code = api.NOTASSIGNED
-		msg = err.Error()
+		msg = "reviewer is not assigned to this PR"
 	case errors.Is(err, entities.ErrNoCandidate):
 		status = http.StatusConflict
 		code = api.NOCANDIDATE
-		msg = err.Error()
+		msg = "no active replacement candidate in team"
 	default:
 		msg = err.Error()
 	}

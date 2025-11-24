@@ -6,7 +6,7 @@ import (
 	oapi "assigning-reviewers-for-pr/internal/oapi"
 )
 
-// FromOAPITeam builds a entities.Team from transport DTO.
+// FromOAPITeam builds an entities.Team from transport DTO.
 func FromOAPITeam(src oapi.Team) entities.Team {
 	members := make([]entities.User, 0, len(src.Members))
 	for _, m := range src.Members {
@@ -81,4 +81,108 @@ func ToOAPIPullShortList(list []entities.PullRequestShort) []oapi.PullRequestSho
 		res = append(res, ToOAPIPullShort(pr))
 	}
 	return res
+}
+
+// ToOAPIStats maps aggregated statistics to transport model.
+func ToOAPIStats(src entities.Stats) oapi.Stats {
+	byUser := make([]oapi.UserStat, 0, len(src.ByUser))
+	for _, s := range src.ByUser {
+		userID, cnt := s.UserID, s.AssignCnt
+		byUser = append(byUser, oapi.UserStat{UserId: &userID, AssignCnt: &cnt})
+	}
+
+	byPR := make([]oapi.PRStat, 0, len(src.ByPR))
+	for _, s := range src.ByPR {
+		prID, cnt := s.PRID, s.AssignCnt
+		byPR = append(byPR, oapi.PRStat{PrId: &prID, AssignCnt: &cnt})
+	}
+
+	byStatus := make([]oapi.StatusStat, 0, len(src.ByStatus))
+	for _, s := range src.ByStatus {
+		status, cnt := oapi.StatusStatStatus(s.Status), s.PRCount
+		byStatus = append(byStatus, oapi.StatusStat{Status: &status, PrCount: &cnt})
+	}
+
+	byTeam := make([]oapi.TeamStat, 0, len(src.ByTeam))
+	for _, s := range src.ByTeam {
+		team, cnt := s.TeamName, s.AssignCnt
+		byTeam = append(byTeam, oapi.TeamStat{TeamName: &team, AssignCnt: &cnt})
+	}
+
+	return oapi.Stats{
+		ByUser:   &byUser,
+		ByPr:     &byPR,
+		ByStatus: &byStatus,
+		ByTeam:   &byTeam,
+	}
+}
+
+// ToOAPIStatsSummary maps filtered statistics to transport model.
+func ToOAPIStatsSummary(src entities.StatsSummary) oapi.StatsSummary {
+	top := make([]oapi.UserStat, 0, len(src.TopReviewers))
+	for _, s := range src.TopReviewers {
+		userID, cnt := s.UserID, s.AssignCnt
+		top = append(top, oapi.UserStat{UserId: &userID, AssignCnt: &cnt})
+	}
+
+	status := make([]oapi.StatusStat, 0, len(src.PRStatusCounts))
+	for _, s := range src.PRStatusCounts {
+		st, cnt := oapi.StatusStatStatus(s.Status), s.PRCount
+		status = append(status, oapi.StatusStat{Status: &st, PrCount: &cnt})
+	}
+
+	teams := make([]oapi.TeamStat, 0, len(src.TeamAssignments))
+	for _, s := range src.TeamAssignments {
+		name, cnt := s.TeamName, s.AssignCnt
+		teams = append(teams, oapi.TeamStat{TeamName: &name, AssignCnt: &cnt})
+	}
+
+	return oapi.StatsSummary{
+		TopReviewers:    &top,
+		PrStatusCounts:  &status,
+		TeamAssignments: &teams,
+	}
+}
+
+// ToOAPIReviewerStats maps per-user stats to transport DTO.
+func ToOAPIReviewerStats(src entities.ReviewerStats) oapi.ReviewerStats {
+	userID, assign, openCnt, mergedCnt := src.UserID, src.AssignCnt, src.OpenPRCnt, src.MergedPRCnt
+	recent := ToOAPIPullShortList(src.RecentPRs)
+	return oapi.ReviewerStats{
+		UserId:      &userID,
+		AssignCnt:   &assign,
+		OpenPrCnt:   &openCnt,
+		MergedPrCnt: &mergedCnt,
+		RecentPrs:   &recent,
+	}
+}
+
+// ToOAPIPRStats maps PR stats to transport DTO.
+func ToOAPIPRStats(src entities.PRStats) oapi.PRStats {
+	prID, name, author := src.PRID, src.Name, src.AuthorID
+	status := oapi.PRStatsStatus(src.Status)
+	reviewers := make([]string, len(src.Reviewers))
+	copy(reviewers, src.Reviewers)
+
+	reassignments := make([]oapi.ReassignmentEvent, 0, len(src.Reassignments))
+	for _, r := range src.Reassignments {
+		oldID, newID := r.OldReviewerID, r.NewReviewerID
+		reassignments = append(reassignments, oapi.ReassignmentEvent{
+			OldReviewerId: &oldID,
+			NewReviewerId: newID,
+			ChangedAt:     &r.ChangedAt,
+		})
+	}
+
+	return oapi.PRStats{
+		PrId:          &prID,
+		PrName:        &name,
+		AuthorId:      &author,
+		Status:        &status,
+		Reviewers:     &reviewers,
+		CreatedAt:     src.CreatedAt,
+		MergedAt:      src.MergedAt,
+		Reassignments: &reassignments,
+		TransferCnt:   &src.TransferCount,
+	}
 }

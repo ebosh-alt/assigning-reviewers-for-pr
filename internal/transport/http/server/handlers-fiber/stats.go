@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"assigning-reviewers-for-pr/internal/entities"
+	"assigning-reviewers-for-pr/internal/mapper"
 	api "assigning-reviewers-for-pr/internal/oapi"
 
 	"github.com/gofiber/fiber/v2"
@@ -16,7 +17,7 @@ func (h *Handler) GetStats(c *fiber.Ctx) error {
 		h.log.Errorw("failed to get stats", "error", err.Error())
 		return writeError(c, err)
 	}
-	return c.Status(http.StatusOK).JSON(statsRes)
+	return c.Status(http.StatusOK).JSON(mapper.ToOAPIStats(statsRes))
 }
 
 // GetStatsSummary возвращает отфильтрованную статистику.
@@ -41,7 +42,7 @@ func (h *Handler) GetStatsSummary(c *fiber.Ctx, params api.GetStatsSummaryParams
 		h.log.Errorw("failed to get summary stats", "error", err.Error())
 		return writeError(c, err)
 	}
-	return c.Status(http.StatusOK).JSON(summary)
+	return c.Status(http.StatusOK).JSON(mapper.ToOAPIStatsSummary(summary))
 }
 
 // GetStatsReviewerUserId возвращает статистику ревьюера.
@@ -56,7 +57,7 @@ func (h *Handler) GetStatsReviewerUserId(c *fiber.Ctx, userID string, params api
 		h.log.Errorw("failed to get reviewer stats", "error", err.Error())
 		return writeError(c, err)
 	}
-	return c.Status(http.StatusOK).JSON(res)
+	return c.Status(http.StatusOK).JSON(mapper.ToOAPIReviewerStats(res))
 }
 
 // GetStatsPrPrId возвращает статистику по PR.
@@ -66,5 +67,5 @@ func (h *Handler) GetStatsPrPrId(c *fiber.Ctx, prID string) error {
 		h.log.Errorw("failed to get PR stats", "error", err.Error())
 		return writeError(c, err)
 	}
-	return c.Status(http.StatusOK).JSON(res)
+	return c.Status(http.StatusOK).JSON(mapper.ToOAPIPRStats(res))
 }
